@@ -1,0 +1,17 @@
+# MATLAB temporary files
+*.asv
+*.autosave
+*.fig~
+*.mlx~
+*.m~
+*.mex*
+*.p
+*.mat
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# MATLAB project
+resources/project/*
