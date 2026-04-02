@@ -1,206 +1,282 @@
-% =========================================================
-%  main.m  —  Termal SLAM Ana Dosyası
-%  Proje  : Derin Öğrenme Tabanlı Grafik Tabanlı Termal SLAM
-%
-%  Yazarlar:
-%      Tuana  — CNN ön uç (feature_cnn, pose_estimator, load_cnn_model)
-%      Zeynep — Poz grafı ve optimizasyon (PoseGraph, GraphOptimizer)
-%      Sema   — Ön işleme ve görselleştirme (preprocess_thermal, plot_trajectory)
-%
-%  Çalıştırma: >> main
-% =========================================================
-
 clc; clear; close all;
 
+addpath('src');
+addpath(fullfile(pwd, 'visualization'));
+
 %% ============ AYARLAR ============
-dataRoot   = fullfile(pwd, 'data');
 setName    = 'set00';
+dataRoot   = fullfile(pwd, 'data');
+setDir     = fullfile(dataRoot, setName);
 resultsDir = fullfile(pwd, 'results');
 
-if ~exist(fullfile(dataRoot, setName), 'dir')
-    error('Veri seti bulunamadi: %s', fullfile(dataRoot, setName));
+if ~exist(setDir, 'dir')
+    error("Set klasörü yok: %s", setDir);
 end
-if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
+if ~exist(resultsDir, 'dir')
+    mkdir(resultsDir);
+end
 
-% Modül yolları
-addpath(fullfile(pwd, 'src', 'odometry'));
-addpath(fullfile(pwd, 'src', 'preprocessing'));
-addpath(fullfile(pwd, 'src', 'visualization'));
-addpath(fullfile(pwd, 'src', 'PoseGraph'));
+showEvery   = 0;
+R           = 8;
+scale       = 0.02;
+scoreThresh = 0.08;
+jumpFrac    = 0.8;
+useEveryN   = 3;
+alphaLP     = 0.7;
+keyInterval = 20;
+maxPix      = 4;
+confK       = 50;
 
-% Parametreler
-useEveryN   = 3;       % her N. frame'i işle
-scaleMetric = 0.05;    % piksel → metrik ölçek faktörü
-alphaLP     = 0.7;     % low-pass filtre katsayısı
-
-% Modül kontrol bayrakları
-% Zeynep veya Sema'nın dosyaları henüz yoksa otomatik false olur
-USE_POSEGRAPH  = exist('PoseGraph',        'file') == 2;
-USE_OPTIMIZER  = exist('GraphOptimizer',   'file') == 2;
-USE_PREPROCESS = exist('preprocess_thermal','file') == 2;
-USE_PLOT       = exist('plot_trajectory',  'file') == 2;
-
-fprintf('Modul durumu:\n');
-fprintf('  PoseGraph     : %s\n', ternary(USE_POSEGRAPH,  'HAZIR','BEKLIYOR'));
-fprintf('  GraphOptimizer: %s\n', ternary(USE_OPTIMIZER,  'HAZIR','BEKLIYOR'));
-fprintf('  preprocess    : %s\n', ternary(USE_PREPROCESS, 'HAZIR','BEKLIYOR'));
-fprintf('  plot_trajectory: %s\n\n', ternary(USE_PLOT,    'HAZIR','BEKLIYOR'));
-
-%% ============ CNN MODELİ YÜKLE (Tuana) ============
-fprintf('CNN modeli yukleniyor...\n');
-net = load_cnn_model();
-fprintf('CNN hazir.\n\n');
-
-%% ============ VİDEO KLASÖRLERİNİ BUL ============
-setDir    = fullfile(dataRoot, setName);
+%% ============ VIDEO KLASÖRLERİNİ BUL ============
 videoDirs = dir(setDir);
 videoDirs = videoDirs([videoDirs.isdir]);
-videoDirs = videoDirs(~ismember({videoDirs.name},{'.','..'}));
-fprintf('Bulunan video sayisi: %d\n\n', numel(videoDirs));
+videoDirs = videoDirs(~ismember({videoDirs.name}, {'.','..'}));
 
-%% ============ HER VİDEOYU İŞLE ============
-for v = 1:numel(videoDirs)
+fprintf("Bulunan video klasörü sayısı: %d\n", length(videoDirs));
 
+metrics = struct([]);
+
+%% ============ HER VIDEOYU İŞLE ============
+for v = 1:length(videoDirs)
+
+    graph     = PoseGraph();
     videoName = videoDirs(v).name;
-    seqDir    = fullfile(setDir, videoName, 'lwir');   % sadece lwir kullanılıyor
+    seqBase   = fullfile(setDir, videoName);
+    seqDir    = fullfile(seqBase, 'lwir');
 
     if ~exist(seqDir, 'dir')
-        fprintf('SKIP (lwir yok): %s\n', videoName);
+        fprintf("SKIP (lwir yok): %s\n", seqDir);
         continue;
     end
 
-    fprintf('=== Isleniyor: %s / %s ===\n', setName, videoName);
+    fprintf("\n=== Processing %s / %s ===\n", setName, videoName);
 
-    % Frame listesi
-    imgs = dir(fullfile(seqDir, 'I*.jpg'));
-    if isempty(imgs)
-        imgs = dir(fullfile(seqDir, '*.jpg'));
-    end
-    [~,idx] = sort({imgs.name});
-    imgs    = imgs(idx);
+    imgs  = dir(fullfile(seqDir, '*'));
+    imgs  = imgs(~[imgs.isdir]);
+    names = {imgs.name};
+    isJ   = endsWith(lower(names), '.jpg') | endsWith(lower(names), '.jpeg');
+    imgs  = imgs(isJ);
+
+    [~, idx] = sort({imgs.name});
+    imgs = imgs(idx);
+
     nFrames = numel(imgs);
-    fprintf('Toplam frame: %d\n', nFrames);
+    fprintf("Toplam frame: %d\n", nFrames);
 
-    if nFrames < 2, fprintf('SKIP (az frame)\n'); continue; end
+    if nFrames < 2
+        fprintf("SKIP (frame az)\n");
+        continue;
+    end
 
-    % Bu videoya özel değişkenler
-    pose       = [0, 0];
-    trajectory = zeros(nFrames, 2);
-    prev_I     = [];
-    prev_feat  = [];
+    pose       = [0 0];
+    trajectory = zeros(nFrames-1, 2);
+    prev       = [];
     prev_dx    = 0;
     prev_dy    = 0;
+    keyframe   = [];
 
-    % Poz grafı (Zeynep hazırsa)
-    if USE_POSEGRAPH
-        pg = PoseGraph();
-        pg.addNode(pose);
-    end
+    keyframeNodeIds  = [];
+    keyframeFrameIds = [];
 
-    %% ---- ANA DÖNGÜ ----
+    invalidCount = 0;
+    usedCount    = 0;
+    confList     = [];
+    pathLength   = 0;
+
+    %% ============ ANA DÖNGÜ ============
     for k = 1:nFrames
 
-        I_raw = imread(fullfile(seqDir, imgs(k).name));
+        [I_lwir, I_vis, ok] = load_frame_pair(seqBase, '', k-1);
+        if ~ok
+            continue;
+        end
 
-        % Ön işleme
-        if USE_PREPROCESS
-            Ik = preprocess_thermal(I_raw);
-        else
-            Ik = local_normalize(I_raw);
+        I = fuse_modalities(I_lwir, I_vis, 'weighted');
+        I = my_preprocess(I);
+
+        if isempty(prev)
+            prev     = I;
+            keyframe = I;
+
+            graph = graph.addNode([0 0]);
+            keyframeNodeIds(end+1)  = 1;
+            keyframeFrameIds(end+1) = k;
+            continue;
         end
 
         if mod(k, useEveryN) ~= 0
+            prev = I;
             continue;
         end
 
-        % CNN özellik çıkar (Tuana)
-        curr_feat = feature_cnn(Ik, net);
+        usedCount  = usedCount + 1;
+        isKeyframe = false;
 
-        if isempty(prev_feat)
-            prev_feat = curr_feat;
-            prev_I    = Ik;
-            continue;
+        if isempty(keyframe)
+            keyframe   = I;
+            isKeyframe = true;
+        elseif mod(k, keyInterval) == 0
+            isKeyframe = true;
         end
 
-        % Poz tahmini (Tuana)
-        [dx, dy, conf] = pose_estimator(prev_I, Ik, prev_feat, curr_feat);
+        [~, w] = size(I);
+        roiW = round(w * 0.25);
+        roiH = round(size(I,1) * 0.18);
+        x0   = round(w * 0.5 - roiW/2);
+        y0   = round(size(I,1) * 0.60 - roiH/2);
 
-        % Low-pass filtre
-        dx = alphaLP * dx + (1 - alphaLP) * prev_dx;
-        dy = alphaLP * dy + (1 - alphaLP) * prev_dy;
-        prev_dx = dx;
-        prev_dy = dy;
+        [hk, wk] = size(keyframe);
+        roiW = min(roiW, wk);
+        roiH = min(roiH, hk);
+        x0   = max(1, min(x0, wk - roiW + 1));
+        y0   = max(1, min(y0, hk - roiH + 1));
 
-        % Poz güncelle
-        pose(1) = pose(1) + dx * scaleMetric;
-        pose(2) = pose(2) + dy * scaleMetric;
-        trajectory(k,:) = pose;
+        tmpl = keyframe(y0:y0+roiH-1, x0:x0+roiW-1);
 
-        % Poz grafına ekle (Zeynep hazırsa)
-        if USE_POSEGRAPH
-            pg.addNode(pose);
-            pg.addEdge([dx, dy] * scaleMetric, conf);
+        [xShift, yShift, bestScore] = estimateShiftSSD(I, tmpl, x0, y0, R);
+
+        if bestScore > scoreThresh
+            xShift = 0;
+            yShift = 0;
+            invalidCount = invalidCount + 1;
         end
 
-        prev_feat = curr_feat;
-        prev_I    = Ik;
+        if abs(xShift) > R * jumpFrac
+            xShift = 0;
+        end
+        if abs(yShift) > R * jumpFrac
+            yShift = 0;
+        end
 
-        if mod(k, 300) == 0
-            fprintf('  Frame %d/%d  pos=(%.3f, %.3f)  conf=%.3f\n', ...
-                k, nFrames, pose(1), pose(2), conf);
+        xShift = max(-maxPix, min(maxPix, xShift));
+        yShift = max(-maxPix, min(maxPix, yShift));
+
+        confidence = exp(-bestScore * confK);
+        xShift = xShift * confidence;
+        yShift = yShift * confidence;
+        confList(end+1) = confidence;
+
+        if abs(xShift) > abs(yShift)
+            xShift = 0;
+        end
+
+        xShift  = alphaLP * xShift + (1 - alphaLP) * prev_dx;
+        yShift  = alphaLP * yShift + (1 - alphaLP) * prev_dy;
+        prev_dx = xShift;
+        prev_dy = yShift;
+
+        dxMetric = xShift * scale;
+        dyMetric = yShift * scale;
+
+        pose(1) = pose(1) + dxMetric;
+        pose(2) = pose(2) + dyMetric;
+        trajectory(k-1, :) = pose;
+
+        pathLength = pathLength + sqrt(dxMetric^2 + dyMetric^2);
+
+        if isKeyframe
+            prevNode = graph.nodeCount;
+            graph    = graph.addNode(pose);
+            newNode  = graph.nodeCount;
+
+            graph = graph.addEdge(prevNode, newNode, [dxMetric, dyMetric], 1.0);
+
+            keyframe = I;
+            keyframeNodeIds(end+1)  = newNode;
+            keyframeFrameIds(end+1) = k;
+        end
+
+        prev = I;
+
+        if showEvery > 0 && mod(k, showEvery) == 0
+            figure(1); clf;
+            imagesc(I); axis image off; colormap gray;
+            title(sprintf('%s/%s frame %d/%d dx=%.2f dy=%.2f score=%.4f', ...
+                setName, videoName, k, nFrames, xShift, yShift, bestScore), ...
+                'Interpreter', 'none');
+            drawnow;
         end
     end
 
-    traj_raw = trajectory(any(trajectory,2), :);
+    trajectory(:,1) = smoothdata(trajectory(:,1), 'movmean', 5);
+    trajectory(:,2) = smoothdata(trajectory(:,2), 'movmean', 5);
 
-    %% ---- OPTİMİZASYON (Zeynep hazırsa) ----
-    if USE_POSEGRAPH && USE_OPTIMIZER
-        fprintf('Graf optimizasyonu yapiliyor...\n');
-        optimizer = GraphOptimizer(pg);
-        traj_opt  = optimizer.optimize();
+    optimizer      = GraphOptimizer(graph);
+    optimizedNodes = optimizer.optimize();
+
+    if isempty(confList)
+        meanConf = 0;
     else
-        fprintf('  [Graf optimizasyonu bekliyor — Zeynep modulleri eksik]\n');
-        traj_opt = traj_raw;
+        meanConf = mean(confList);
     end
 
-    %% ---- GÖRSELLEŞTİRME ----
-    if USE_PLOT
-        plot_trajectory(traj_raw, traj_opt, sprintf('%s/%s', setName, videoName));
+    if usedCount == 0
+        invalidRatio = 0;
     else
-        figure;
-        plot(traj_raw(:,1), traj_raw(:,2), 'b-', 'LineWidth', 1.5);
-        hold on;
-        plot(traj_raw(1,1),   traj_raw(1,2),   'go','MarkerSize',10,'MarkerFaceColor','g');
-        plot(traj_raw(end,1), traj_raw(end,2), 'rs','MarkerSize',10,'MarkerFaceColor','r');
-        grid on; axis equal;
-        xlabel('X (m)'); ylabel('Y (m)');
-        title(sprintf('Termal SLAM Trajesi — %s/%s', setName, videoName),'Interpreter','none');
-        legend('Traje','Baslangic','Bitis','Location','best');
-        drawnow;
+        invalidRatio = invalidCount / usedCount;
     end
 
-    %% ---- KAYDET ----
-    outFile = fullfile(resultsDir, sprintf('%s_%s_traj.mat', setName, videoName));
-    save(outFile, 'traj_raw', 'traj_opt');
-    fprintf('Kaydedildi: %s\n\n', outFile);
+    metrics(v).videoName      = videoName;
+    metrics(v).nFrames        = nFrames;
+    metrics(v).usedCount      = usedCount;
+    metrics(v).invalidCount   = invalidCount;
+    metrics(v).invalidRatio   = invalidRatio;
+    metrics(v).meanConfidence = meanConf;
+    metrics(v).pathLength     = pathLength;
+    metrics(v).nNodes         = size(graph.nodes,1);
+    metrics(v).nEdges         = numel(graph.edges);
 
+    outMat = fullfile(resultsDir, sprintf('%s_%s_traj.mat', setName, videoName));
+    save(outMat, 'trajectory');
+
+    outGraph = fullfile(resultsDir, sprintf('%s_%s_graph.mat', setName, videoName));
+    save(outGraph, 'graph', 'optimizedNodes', 'keyframeNodeIds', 'keyframeFrameIds');
+
+    fprintf("Kaydedildi: %s\n", outMat);
+    fprintf("Graph kaydedildi: %s\n", outGraph);
+    fprintf("Nodes: %d | Edges: %d\n", size(graph.nodes,1), numel(graph.edges));
+    fprintf("Used: %d | Invalid: %d | Ratio: %.3f | Conf: %.3f | Path: %.3f\n", ...
+        usedCount, invalidCount, invalidRatio, meanConf, pathLength);
+
+    opts.title   = sprintf('Thermal SLAM — %s/%s', setName, videoName);
+    opts.saveDir = fullfile(resultsDir, 'figures');
+    plot_traj(trajectory, optimizedNodes, nFrames, opts);
 end
 
-fprintf('BITTI\n');
+metricsPath = fullfile(resultsDir, sprintf('%s_metrics.mat', setName));
+save(metricsPath, 'metrics');
+fprintf('\nMetrics kaydedildi: %s\n', metricsPath);
+fprintf("\nBİTTİ\n");
 
-%% ============ YEREL YARDIMCI FONKSİYONLAR ============
+%% ============ LOCAL FUNCTION ============
+function [dx, dy, bestScore] = estimateShiftSSD(I, tmpl, x0, y0, R)
+    [th, tw] = size(tmpl);
+    [H, W]   = size(I);
 
-function I = local_normalize(I_raw)
-    if ndims(I_raw) == 3
-        I = double(rgb2gray(I_raw));
-    else
-        I = double(I_raw);
+    bestScore = inf;
+    dx = 0;
+    dy = 0;
+
+    for yy = -R:R
+        for xx = -R:R
+            xs = x0 + xx;
+            ys = y0 + yy;
+
+            if xs < 1 || ys < 1 || (xs+tw-1) > W || (ys+th-1) > H
+                continue;
+            end
+
+            patch = I(ys:ys+th-1, xs:xs+tw-1);
+            d     = patch - tmpl;
+            score = sum(d(:).^2);
+
+            if score < bestScore
+                bestScore = score;
+                dx = xx;
+                dy = yy;
+            end
+        end
     end
-    mn = min(I(:)); mx = max(I(:));
-    if mx > mn, I = (I-mn)/(mx-mn);
-    else, I = zeros(size(I)); end
-end
 
-function s = ternary(cond, a, b)
-    if cond, s = a; else, s = b; end
+    bestScore = bestScore / (th * tw);
 end
