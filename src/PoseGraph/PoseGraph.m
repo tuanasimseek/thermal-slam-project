@@ -1,7 +1,7 @@
 classdef PoseGraph
     properties
-        nodes      % Nx2 [x y]
-        edges      % Mx4 [i j dx dy]
+        nodes
+        edges
         nodeCount
     end
 
@@ -14,11 +14,14 @@ classdef PoseGraph
 
         function obj = addNode(obj, pose)
             obj.nodeCount = obj.nodeCount + 1;
-            obj.nodes(obj.nodeCount,:) = pose;
+            obj.nodes(obj.nodeCount, :) = pose;
         end
 
-        function obj = addEdge(obj, i, j, dx, dy)
-            obj.edges(end+1,:) = [i j dx dy];
+        function obj = addEdge(obj, i, j, delta, weight)
+            if nargin < 5
+                weight = 1.0;
+            end
+            obj.edges(end+1, :) = [i, j, delta(1), delta(2), weight];
         end
     end
 end

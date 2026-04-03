@@ -1,10 +1,10 @@
 clc; clear; close all;
 
-addpath('src');
-addpath(fullfile(pwd, 'visualization'));
+addpath(genpath('src'));
+addpath(fullfile(pwd, 'src', 'visualization'));
 
 %% ============ AYARLAR ============
-setName    = 'set00';
+setName    = 'set04';
 dataRoot   = fullfile(pwd, 'data');
 setDir     = fullfile(dataRoot, setName);
 resultsDir = fullfile(pwd, 'results');
