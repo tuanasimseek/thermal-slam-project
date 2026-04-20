@@ -23,13 +23,13 @@ classdef GraphOptimizer
             if isstruct(edges)
                 E = zeros(numel(edges), 4);
                 for k = 1:numel(edges)
-                    E(k,1) = edges(k).from;
-                    E(k,2) = edges(k).to;
-                    E(k,3) = edges(k).transform(1);
-                    E(k,4) = edges(k).transform(2);
+                    E(k,1)=edges(k).from; E(k,2)=edges(k).to;
+                    E(k,3)=edges(k).transform(1); E(k,4)=edges(k).transform(2);
                 end
+            elseif size(edges,2) >= 4
+                E = edges(:,1:4);
             else
-                E = edges(:, 1:4);
+                E = zeros(0,4);
             end
 
             optimizedNodes = nodes;
