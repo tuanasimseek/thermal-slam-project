@@ -7,7 +7,7 @@
 %   seqName  — şu an kullanılmıyor, ileride çoklu seq için
 %   frameIdx — frame numarası (0'dan başlayan tam sayı)
 %
-% ÇIKIŞ:
+% ÇIKIŞ:a
 %   I_lwir   — termal görüntü, double [0,1], grayscale
 %   I_vis    — visible görüntü, double [0,1], grayscale
 %   success  — true/false (her iki dosya da okunduysa true)

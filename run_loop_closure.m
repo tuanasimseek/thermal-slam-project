@@ -44,7 +44,7 @@ traj  = pos;
 dx_filt = 0;
 dy_filt = 0;
 
-featDB       = zeros(0, 50176);
+featDB = zeros(0, 512);
 frameNodeMap = [];
 
 I_prev    = loadAndPrep(fullfile(files(1).folder, files(1).name));
