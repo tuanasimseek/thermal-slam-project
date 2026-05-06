@@ -1,6 +1,6 @@
 % =========================================================
-%  feature_cnn.m  —  Tuana
-%  Görev : Termal görüntüden CNN özellik vektörü çıkar.
+% Frame'i sayı dizisine çevirir
+% AlexNet sinir ağı → 512 sayılık vektör. "Bu frame'in parmak izi."
 %
 %  Kullanım:
 %      feat = feature_cnn(I, net)

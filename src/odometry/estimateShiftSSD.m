@@ -1,3 +1,7 @@
+% Aynı şeyi klasik yöntemle yapar
+% Piksel piksel karşılaştır, en az fark olan kayma = hareket. CNN yok.
+
+
 function [dx, dy, bestScore] = estimateShiftSSD(I, tmpl, x0, y0, R)
     [th, tw] = size(tmpl);
     [H, W]   = size(I);

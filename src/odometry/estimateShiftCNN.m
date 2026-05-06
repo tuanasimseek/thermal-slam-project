@@ -1,3 +1,7 @@
+% İki frame arası hareketi hesaplar (CNN ile)
+% Frame A vektörü − Frame B vektörü → dx, dy (kaç piksel sağa/yukarı gitti)
+% 
+
 function [dx, dy, bestScore] = estimateShiftCNN(I, tmpl, x0, y0, R, net)
 
     [th, tw] = size(tmpl);

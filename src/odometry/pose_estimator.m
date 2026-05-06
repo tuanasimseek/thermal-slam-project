@@ -1,5 +1,10 @@
+% Kötü dx,dy tahminlerini eler (RANSAC)
+% 100 tahminden 90'ı "2 piksel sağ" diyor, 10'u "50 piksel sağ" — o 10'u at.
+
+
 function [dx, dy, conf] = pose_estimator(I1, I2, feat1, feat2)
-% pose_estimator.m — Optik akış + CNN güven + RANSAC filtresi
+
+% Optik akış + CNN güven + RANSAC filtresi
 % GİRİŞ:  I1, I2    → normalize double [0,1] grayscale görüntüler
 %         feat1,feat2 → feature_cnn'den gelen 512-boyutlu vektörler
 % ÇIKIŞ:  dx, dy    → piksel cinsinden hareket tahmini

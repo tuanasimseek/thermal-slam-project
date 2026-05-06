@@ -1,3 +1,7 @@
+% Birikmiş hatayı dağıtır
+% Loop bulununca "aslında buraya 50m değil 48m yürüdüm" diye tüm grafiği düzeltir
+
+
 classdef GraphOptimizer
     properties
         graph

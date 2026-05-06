@@ -1,54 +1,59 @@
-clc; clear; close all;
+% MAIN_CNN
+% CNN + RANSAC tabanlı SLAM
+% Çıktıları hem results_cnn hem results_final içine düzenli kaydeder
 
+clc; clear; close all;
 addpath(genpath('src'));
 
-%% ============ AYARLAR ============
-setName    = 'set00';
-dataRoot   = fullfile(pwd, 'data');
-setDir     = fullfile(dataRoot, setName);
+%% AYARLAR
+setName  = 'set00';
+dataRoot = fullfile(pwd, 'data');
+setDir   = fullfile(dataRoot, setName);
+
 resultsDir = fullfile(pwd, 'results_cnn');
 
-if ~exist(setDir, 'dir')
-    error("Set klasörü yok: %s", setDir);
-end
-if ~exist(resultsDir, 'dir')
-    mkdir(resultsDir);
+finalDir      = fullfile(pwd, 'results_final');
+finalMatDir   = fullfile(finalDir, 'mat', 'cnn');
+finalFigDir   = fullfile(finalDir, 'figures', 'trajectory');
+
+dirs = {resultsDir, finalDir, finalMatDir, finalFigDir};
+for i=1:numel(dirs)
+    if ~exist(dirs{i},'dir')
+        mkdir(dirs{i});
+    end
 end
 
-showEvery   = 0;
-R           = 8;
 scale       = 0.02;
-scoreThresh = 0.08;
-jumpFrac    = 0.8;
 useEveryN   = 3;
 alphaLP     = 0.7;
-keyInterval = 20;
-maxPix      = 4;
-confK       = 50;
+keyInterval = 8;
 
-%% ============ VIDEO KLASÖRLERİ ============
+%% CNN MODEL
+net = load_cnn_model();
+
+%% VIDEO KLASÖRLERİ
 videoDirs = dir(setDir);
 videoDirs = videoDirs([videoDirs.isdir]);
-videoDirs = videoDirs(~ismember({videoDirs.name}, {'.','..'}));
+videoDirs = videoDirs(~ismember({videoDirs.name},{'.','..'}));
 
-fprintf("Bulunan video klasörü sayısı: %d\n", length(videoDirs));
+fprintf("Video sayısı: %d\n", length(videoDirs));
 
-%% ============ HER VIDEO ============
+%% HER VIDEO
 for v = 1:length(videoDirs)
 
     graph     = PoseGraph();
     videoName = videoDirs(v).name;
     seqDir    = fullfile(setDir, videoName, 'lwir');
 
-    if ~exist(seqDir, 'dir')
-        fprintf("SKIP (lwir yok): %s\n", seqDir);
+    if ~exist(seqDir,'dir')
+        fprintf("SKIP: %s\n", seqDir);
         continue;
     end
 
-    fprintf("\n=== SSD Processing %s / %s ===\n", setName, videoName);
+    fprintf("\n=== CNN %s / %s ===\n", setName, videoName);
 
-    imgs  = dir(fullfile(seqDir, '*.jpg'));
-    [~, idx] = sort({imgs.name});
+    imgs = dir(fullfile(seqDir,'*.jpg'));
+    [~,idx] = sort({imgs.name});
     imgs = imgs(idx);
 
     nFrames = numel(imgs);
@@ -56,28 +61,34 @@ for v = 1:length(videoDirs)
         continue;
     end
 
+    maxFrames = min(nFrames, 600);
+
     pose       = [0 0];
-    trajectory = zeros(nFrames-1, 2);
+    trajectory = zeros(maxFrames-1, 2);
 
-    prev       = [];
-    prev_dx    = 0;
-    prev_dy    = 0;
+    prev = [];
+    prev_feat = [];
 
-    keyframe   = [];
+    prev_dx = 0;
+    prev_dy = 0;
+
     keyframeNodeIds  = [];
     keyframeFrameIds = [];
 
-    %% ===== ANA LOOP =====
-    for k = 1:nFrames
+    %% LOOP
+    for k = 1:maxFrames
 
         I = imread(fullfile(seqDir, imgs(k).name));
         I = my_preprocess(I);
 
+        feat = feature_cnn(I, net);
+
         if isempty(prev)
-            prev     = I;
-            keyframe = I;
+            prev = I;
+            prev_feat = feat;
 
             graph = graph.addNode([0 0]);
+
             keyframeNodeIds(end+1)  = 1;
             keyframeFrameIds(end+1) = k;
             continue;
@@ -85,86 +96,81 @@ for v = 1:length(videoDirs)
 
         if mod(k, useEveryN) ~= 0
             prev = I;
+            prev_feat = feat;
             continue;
         end
 
-        %% ===== TEMPLATE MATCHING =====
-        [h, w] = size(I);
-        roiW = round(w * 0.25);
-        roiH = round(h * 0.18);
+        %% ===== CNN + RANSAC POSE =====
+        [dx_pix, dy_pix, conf] = pose_estimator(prev, I, prev_feat, feat);
 
-        x0 = round(w/2 - roiW/2);
-        y0 = round(h*0.6 - roiH/2);
+        %% SMOOTH
+        dx_pix = alphaLP*dx_pix + (1-alphaLP)*prev_dx;
+        dy_pix = alphaLP*dy_pix + (1-alphaLP)*prev_dy;
 
-        tmpl = keyframe(y0:y0+roiH-1, x0:x0+roiW-1);
+        prev_dx = dx_pix;
+        prev_dy = dy_pix;
 
-        [xShift, yShift, bestScore] = estimateShiftSSD(I, tmpl, x0, y0, R);
-
-        if bestScore > scoreThresh
-            xShift = 0;
-            yShift = 0;
-        end
-
-        xShift = max(-maxPix, min(maxPix, xShift));
-        yShift = max(-maxPix, min(maxPix, yShift));
-
-        %% ===== SMOOTH =====
-        xShift  = alphaLP * xShift + (1-alphaLP)*prev_dx;
-        yShift  = alphaLP * yShift + (1-alphaLP)*prev_dy;
-        prev_dx = xShift;
-        prev_dy = yShift;
-
-        dx = xShift * scale;
-        dy = yShift * scale;
+        dx = dx_pix * scale;
+        dy = dy_pix * scale;
 
         pose = pose + [dx dy];
         trajectory(k-1,:) = pose;
 
-        %% ===== GRAPH =====
+        %% GRAPH
         if mod(k, keyInterval) == 0
             prevNode = graph.nodeCount;
+
             graph = graph.addNode(pose);
             newNode = graph.nodeCount;
 
             graph = graph.addEdge(prevNode, newNode, dx, dy);
 
-            keyframe = I;
             keyframeNodeIds(end+1)  = newNode;
             keyframeFrameIds(end+1) = k;
         end
 
         prev = I;
-
+        prev_feat = feat;
     end
 
-    %% ===== TRAJ SMOOTH =====
+    %% TEMİZLE
+    trajectory = trajectory(any(trajectory,2),:);
+
+    if size(trajectory,1) < 2
+        continue;
+    end
+
+    %% SMOOTH
     trajectory(:,1) = smoothdata(trajectory(:,1),'movmean',5);
     trajectory(:,2) = smoothdata(trajectory(:,2),'movmean',5);
 
-    %% ===== OPTIMIZATION (TEK YER!) =====
-    optimizer = GraphOptimizer(graph);
+    %% OPTIMIZATION
+    optimizer      = GraphOptimizer(graph);
     optimizedNodes = optimizer.optimize(50, 0.1);
 
-    %% ===== SAVE =====
-    outMat = fullfile(resultsDir, ...
-        sprintf('%s_%s_traj.mat', setName, videoName));
+    %% MAT SAVE (RAW)
+    outMat = fullfile(resultsDir, sprintf('%s_%s_traj.mat', setName, videoName));
     save(outMat, 'trajectory');
 
-    outGraph = fullfile(resultsDir, ...
-        sprintf('%s_%s_graph.mat', setName, videoName));
+    outGraph = fullfile(resultsDir, sprintf('%s_%s_graph.mat', setName, videoName));
+    save(outGraph, 'graph', 'optimizedNodes', 'keyframeNodeIds', 'keyframeFrameIds');
 
-    save(outGraph, 'graph', 'optimizedNodes', ...
-        'keyframeNodeIds', 'keyframeFrameIds');
+    %% MAT SAVE (FINAL)
+    finalTrajMat = fullfile(finalMatDir, sprintf('%s_%s_cnn_traj.mat', setName, videoName));
+    finalGraphMat = fullfile(finalMatDir, sprintf('%s_%s_cnn_graph.mat', setName, videoName));
 
-    fprintf("Kaydedildi: %s\n", outMat);
-    fprintf("Graph kaydedildi: %s\n", outGraph);
+    save(finalTrajMat, 'trajectory');
+    save(finalGraphMat, 'graph', 'optimizedNodes', 'keyframeNodeIds', 'keyframeFrameIds');
 
-    %% ===== PLOT =====
-    opts.title   = sprintf('Thermal SLAM SSD — %s/%s', setName, videoName);
-    opts.saveDir = fullfile(resultsDir, 'figures');
+    %% PNG SAVE
+    opts.title    = sprintf('Thermal SLAM CNN — %s/%s', setName, videoName);
+    opts.saveDir  = finalFigDir;
+    opts.fileName = sprintf('%s_%s_cnn_trajectory.png', setName, videoName);
 
-    plot_traj(trajectory, optimizedNodes, nFrames, opts);
+    plot_traj(trajectory, optimizedNodes, maxFrames, opts);
+
+    fprintf("Kaydedildi (CNN): %s\n", finalTrajMat);
 
 end
 
-fprintf("\nSSD BİTTİ\n");
+fprintf("\nCNN BİTTİ\n");

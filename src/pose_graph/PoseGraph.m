@@ -1,3 +1,7 @@
+% Tüm konumları bir grafikte saklar
+% Düğüm = konum, kenar = "A'dan B'ye şu kadar hareket ettim" bilgisi
+
+
 classdef PoseGraph
     properties
         nodes; edges; nodeCount

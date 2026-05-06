@@ -1,3 +1,8 @@
+% "Buraya daha önce gelmiştim" der
+% Frame parmak izlerini karşılaştırır. Benzerlik ≥ 0.95 → loop tespit!
+% loop_closure → turuncu kesik çizgiler = sistem "buraya daha önce geldim" dedi. 
+
+
 function [loopIdx, simScore] = loop_detector(featDB, featCurr, minInterval)
 
     LOOP_THRESHOLD = 0.93;   % yapay testte biraz sıkı

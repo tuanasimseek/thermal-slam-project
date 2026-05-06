@@ -1,3 +1,8 @@
+% Termal ön işleme
+% Ham frame'i temizler
+% Gürültü azalt, kontrast ayarla → CNN'e hazır hale getir
+
+
 function I = my_preprocess(I)
 % my_preprocess.m — Toolbox gerektirmeyen versiyon
 % GİRİŞ:  I — ham görüntü (grayscale veya RGB)
