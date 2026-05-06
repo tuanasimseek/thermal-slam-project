@@ -115,7 +115,10 @@ t_ft   = traj_ft(1:minLen,:);
 
 diff_ate = t_base - t_ft;
 
-ATE_base = 0.0;
+% DÜZELTME: ATE_base artık elle 0 değil, doğru hesaplanıyor.
+% ATE_base: base modelin başlangıca olan kümülatif drift'i
+% (kendi kendine referans: her adımın başlangıçtan uzaklığı ortalaması)
+ATE_base = sqrt(mean(sum(t_base.^2, 2)));
 ATE_ft   = sqrt(mean(sum(diff_ate.^2, 2)));
 
 fprintf('\nATE — Base: %.4f | Fine-tune: %.4f m\n', ATE_base, ATE_ft);

@@ -14,21 +14,22 @@ end
 
 switch lower(mode)
     case 'cnn'
-        resultsDir = fullfile(pwd, 'results_cnn');
-        methodName = 'cnn';
-
+        resultsDir  = fullfile(pwd, 'results_cnn');
+        finalMatDir = fullfile(pwd, 'results_final', 'mat', 'cnn');
+        methodName  = 'cnn';
     case 'ssd'
-        resultsDir = fullfile(pwd, 'results_ssd');
-        methodName = 'ssd';
-
+        resultsDir  = fullfile(pwd, 'results_ssd');
+        finalMatDir = fullfile(pwd, 'results_final', 'mat', 'ssd');
+        methodName  = 'ssd';
     otherwise
-        resultsDir = fullfile(pwd, 'results');
-        methodName = 'default';
+        resultsDir  = fullfile(pwd, 'results');
+        finalMatDir = '';
+        methodName  = 'default';
 end
 
 addpath(genpath('src'));
 
-finalDir = fullfile(pwd, 'results_final');
+finalDir       = fullfile(pwd, 'results_final');
 advancedFigDir = fullfile(finalDir, 'figures', 'advanced', methodName);
 
 if ~exist(advancedFigDir, 'dir')
@@ -55,16 +56,11 @@ errCount  = 0;
 
 for fi = 1:length(trajFiles)
 
-    tName = trajFiles(fi).name;
-
+    tName  = trajFiles(fi).name;
     prefix = strrep(tName, '_traj.mat', '');
 
     trajPath  = fullfile(resultsDir, tName);
     graphPath = fullfile(resultsDir, [prefix '_graph.mat']);
-
-    setPrefix     = regexp(prefix, '^set\d+', 'match', 'once');
-    metricPath    = fullfile(resultsDir, [prefix '_metrics.mat']);
-    metricSetPath = fullfile(resultsDir, [setPrefix '_metrics.mat']);
 
     if ~exist(graphPath, 'file')
         fprintf('SKIP graph yok: %s\n', prefix);
@@ -72,31 +68,32 @@ for fi = 1:length(trajFiles)
         continue;
     end
 
-    if exist(metricPath, 'file')
-        mPath = metricPath;
-    elseif exist(metricSetPath, 'file')
-        mPath = metricSetPath;
-    else
-        mPath = '';
+    % Eski metrics.mat kullanılmıyor çünkü meanConfidence eski dosyada 1.0000 kalabiliyor
+    mPath = '';
+
+    % DÜZELTME: conf.mat ara — results_final/mat/cnn/ içinde
+    % Dosya adı: set00_V000_cnn_conf.mat
+    confPath = '';
+    if ~isempty(finalMatDir)
+        % prefix örn: set00_V000 → set00_V000_cnn_conf.mat
+        confCandidate = fullfile(finalMatDir, [prefix '_' methodName '_conf.mat']);
+        if exist(confCandidate, 'file')
+            confPath = confCandidate;
+        end
     end
 
     fprintf('Isleniyor: %s\n', prefix);
 
     try
-        if isempty(mPath)
-            plot_advanced(trajPath, graphPath, [], advancedFigDir, methodName);
-        else
-            plot_advanced(trajPath, graphPath, mPath, advancedFigDir, methodName);
-        end
-
+        plot_advanced(trajPath, graphPath, mPath, advancedFigDir, methodName, confPath);
         close all;
         okCount = okCount + 1;
-
     catch ME
         fprintf('HATA %s: %s\n', prefix, ME.message);
         errCount = errCount + 1;
         close all;
     end
+
 end
 
 fprintf('\n============================================\n');

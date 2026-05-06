@@ -75,6 +75,9 @@ for v = 1:length(videoDirs)
     keyframeNodeIds  = [];
     keyframeFrameIds = [];
 
+    % DÜZELTME 1: conf değerlerini biriktirmek için dizi başlat
+    confValues = [];
+
     %% LOOP
     for k = 1:maxFrames
 
@@ -102,6 +105,9 @@ for v = 1:length(videoDirs)
 
         %% ===== CNN + RANSAC POSE =====
         [dx_pix, dy_pix, conf] = pose_estimator(prev, I, prev_feat, feat);
+
+        % DÜZELTME 2: conf değerini diziye ekle
+        confValues(end+1) = conf; %#ok<AGROW>
 
         %% SMOOTH
         dx_pix = alphaLP*dx_pix + (1-alphaLP)*prev_dx;
@@ -144,6 +150,14 @@ for v = 1:length(videoDirs)
     trajectory(:,1) = smoothdata(trajectory(:,1),'movmean',5);
     trajectory(:,2) = smoothdata(trajectory(:,2),'movmean',5);
 
+    % DÜZELTME 3: ortalama güven hesapla, ekrana yaz
+    if isempty(confValues)
+        meanConf = 0;
+    else
+        meanConf = mean(confValues);
+    end
+    fprintf("Ort. guven skoru: %.4f\n", meanConf);
+
     %% OPTIMIZATION
     optimizer      = GraphOptimizer(graph);
     optimizedNodes = optimizer.optimize(50, 0.1);
@@ -155,12 +169,14 @@ for v = 1:length(videoDirs)
     outGraph = fullfile(resultsDir, sprintf('%s_%s_graph.mat', setName, videoName));
     save(outGraph, 'graph', 'optimizedNodes', 'keyframeNodeIds', 'keyframeFrameIds');
 
-    %% MAT SAVE (FINAL)
-    finalTrajMat = fullfile(finalMatDir, sprintf('%s_%s_cnn_traj.mat', setName, videoName));
-    finalGraphMat = fullfile(finalMatDir, sprintf('%s_%s_cnn_graph.mat', setName, videoName));
+    %% MAT SAVE (FINAL) — DÜZELTME: meanConf ve confValues de kaydediliyor
+    finalTrajMat  = fullfile(finalMatDir, sprintf('%s_%s_cnn_traj.mat',   setName, videoName));
+    finalGraphMat = fullfile(finalMatDir, sprintf('%s_%s_cnn_graph.mat',  setName, videoName));
+    finalConfMat  = fullfile(finalMatDir, sprintf('%s_%s_cnn_conf.mat',   setName, videoName));
 
-    save(finalTrajMat, 'trajectory');
+    save(finalTrajMat,  'trajectory');
     save(finalGraphMat, 'graph', 'optimizedNodes', 'keyframeNodeIds', 'keyframeFrameIds');
+    save(finalConfMat,  'confValues', 'meanConf');
 
     %% PNG SAVE
     opts.title    = sprintf('Thermal SLAM CNN — %s/%s', setName, videoName);
