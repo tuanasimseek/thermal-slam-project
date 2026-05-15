@@ -23,7 +23,4 @@ data/
 dataset/
 datasets/
 
-# Görseller
-*.jpg
-*.jpeg
-*.png
+
