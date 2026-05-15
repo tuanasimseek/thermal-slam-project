@@ -23,7 +23,6 @@ kullanılmıştır.
 
 Bu projenin amacı, termal görüntüler üzerinden çalışan bir SLAM sistemi geliştirerek:
 
-- robot konum tahmini yapmak,
 - hareket bilgisini çıkarmak,
 - drift hatasını azaltmak,
 - loop closure ile tekrar ziyaret edilen bölgeleri tespit etmek,
