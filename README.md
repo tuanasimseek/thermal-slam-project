@@ -166,7 +166,6 @@ thermal-slam-project/
 | loop_closure | Tespit edilen loop bağlantıları |
 | metrics | ATE / RTE sonuçları |
 | compare | CNN vs SSD karşılaştırması |
-
 ---
 
 # CNN vs SSD Karşılaştırması
@@ -175,47 +174,63 @@ thermal-slam-project/
   <img src="results_final/figures/compare/compare_cnn_ssd_set00.png" width="900"/>
 </p>
 
-Bu karşılaştırma görseli, CNN tabanlı ve SSD tabanlı odometri yöntemlerinin performans farklarını göstermektedir.
+Bu karşılaştırma görseli, CNN tabanlı ve SSD tabanlı odometri yöntemlerinin farklı metrikler üzerindeki performans farklarını göstermektedir.
+
+Karşılaştırma içerisinde:
+
+- Path Length
+- Drift
+- Smoothness
+
+metrikleri video bazlı ve ortalama olarak analiz edilmiştir.
 
 ---
 
-# Trajectory Görselleştirmesi
+# Raw vs Optimized Trajectory
 
 <p align="center">
-  <img src="results_final/figures/trajectory/set00_V000_cnn_trajectory.png" width="700"/>
+  <img src="results_final/figures/trajectory/set00_V001_cnn_trajectory.png" width="700"/>
 </p>
 
-Bu görsel, CNN tabanlı termal SLAM sistemi tarafından oluşturulan trajectory sonucunu göstermektedir.
+Bu görsel, CNN tabanlı termal SLAM sistemi tarafından oluşturulan ham trajectory ile optimize edilmiş trajectory sonuçlarını göstermektedir.
+
+Pose Graph Optimization işlemi sonrası trajectory yapısındaki drift etkisinin azaltıldığı gözlemlenmektedir.
 
 ---
 
 # Heatmap Görselleştirmesi
 
 <p align="center">
-  <img src="results_final/figures/advanced/cnn/heatmap/set00_V000_cnn_adv_heatmap.png" width="700"/>
+  <img src="results_final/figures/advanced/cnn/heatmap/set00_V002_cnn_adv_heatmap.png" width="700"/>
 </p>
 
-Heatmap görselleştirmesi, sistemin en yoğun geçtiği bölgeleri göstermektedir.
+Heatmap görselleştirmesi, trajectory boyunca sistemin en yoğun geçtiği bölgeleri göstermektedir.
+
+Yüksek yoğunluklu bölgeler, tekrar ziyaret edilen veya uzun süre boyunca takip edilen alanları temsil etmektedir.
 
 ---
 
 # Confidence Görselleştirmesi
 
 <p align="center">
-  <img src="results_final/figures/advanced/cnn/confidence/set00_V000_cnn_adv_confidence.png" width="700"/>
+  <img src="results_final/figures/advanced/cnn/confidence/set00_V005_cnn_adv_confidence.png" width="700"/>
 </p>
 
 Bu görsel trajectory güven seviyesini ve hareket kararlılığını göstermektedir.
+
+Trajectory etrafındaki güven bandı, sistemin hareket tahminlerindeki güven seviyesini görselleştirmektedir.
 
 ---
 
 # Loop Closure Görselleştirmesi
 
 <p align="center">
-  <img src="results_final/figures/advanced/cnn/loop_closure/set00_V000_cnn_adv_loop_closure.png" width="700"/>
+  <img src="results_final/figures/advanced/cnn/loop_closure/set00_V002_cnn_adv_loop_closure.png" width="700"/>
 </p>
 
-Loop closure sistemi, daha önce ziyaret edilen bölgeleri tespit ederek trajectory drift hatasını azaltmaktadır.
+Bu görsel, trajectory üzerindeki potansiyel loop closure bölgelerini göstermektedir.
+
+Gerçek loop edge yapısı yerine proximity-based loop analizi kullanılmıştır. Belirli mesafe eşiklerinin altında kalan bölgeler potansiyel loop closure alanları olarak işaretlenmiştir.
 
 ---
 
@@ -260,11 +275,11 @@ compare_cnn_ssd
 
 Yapılan deneyler sonucunda:
 
-- CNN tabanlı odometri yönteminin daha kararlı trajectory ürettiği,
-- Pose Graph optimizasyonunun drift hatasını azalttığı,
-- Loop Closure mekanizmasının trajectory tutarlılığını artırdığı,
-- SSD yönteminin klasik fakat daha gürültülü sonuçlar verdiği
+- CNN tabanlı odometri yönteminin termal görüntüler üzerinde güçlü feature extraction yeteneği sağladığı,
+- Pose Graph Optimization işleminin trajectory drift hatasını azalttığı,
+- Loop Closure analizlerinin trajectory tutarlılığını artırdığı,
+- SSD yönteminin klasik ve hesaplama açısından daha hafif bir yaklaşım sunduğu,
+- CNN ve SSD yöntemlerinin farklı senaryolarda farklı avantajlar gösterdiği
 
 gözlemlenmiştir.
-
 ---
