@@ -1,3 +1,5 @@
+% Frame1 → Frame2 arası hareketi buluyor.ODOMETRY.
+
 function [dx, dy, conf] = pose_estimator(I1, I2, feat1, feat2)
 % Optik akış + CNN güven + RANSAC filtresi
 % GİRİŞ:  I1, I2    → normalize double [0,1] grayscale görüntüler
@@ -18,7 +20,8 @@ else
 end
 
 %% 2. OPTİK AKIŞ (Lucas-Kanade)
-opticFlow = opticalFlowLK('NoiseThreshold', 0.009);
+opticFlow = opticalFlowLK('NoiseThreshold', 0.009); %piksel hareketlerini takip etmek
+% yani "Bu sıcak piksel nereye kaydı?" : vx → x yönü hareket , vy → y yönü hareket
 estimateFlow(opticFlow, I1_u8);
 flow = estimateFlow(opticFlow, I2_u8);
 
@@ -26,15 +29,19 @@ vx = flow.Vx;
 vy = flow.Vy;
 
 %% 3. RANSAC FİLTRESİ — conf artık buradan geliyor
+%neden gerekli : Optical flow çok gürültülü. Bazı pikseller: yanlış hareket eder,titreşim olur
+%ransac gorevi : yanlış motion vectorlerini elemek
+
 [dx, dy, conf] = ransacMedian(vx, vy);
 
 %% 4. CNN GÜVEN AĞIRLIĞI (kosinüs benzerliği yardımcı bilgi olarak kullanılır)
-cnn_sim = max(0, min(1, dot(feat1, feat2)));
+cnn_sim = max(0, min(1, dot(feat1, feat2))); %dot : cosine similarity.Eğer iki frame feature olarak benziyorsa: motion tahmini daha güvenilir olabilir
 
 % İkisini birleştir: RANSAC inlier oranı ağırlıklı, CNN ikincil
-conf = 0.7 * conf + 0.3 * cnn_sim;
+conf = 0.7 * conf + 0.3 * cnn_sim; 
 
 %% 5. DÜŞÜK GÜVENDE HAREKETİ KÜÇÜLT
+%trajectory patlamasını önlüyor.
 if conf < 0.5
     dx = dx * conf * 2;
     dy = dy * conf * 2;
@@ -57,7 +64,7 @@ magnitude = sqrt(vx.^2 + vy.^2);
 validMask = magnitude > 1e-3;
 
 if sum(validMask(:)) < 10
-    dx = median(vx(:));
+    dx = median(vx(:)); % Median alınarak: çok daha stabil motion bulunuyor.
     dy = median(vy(:));
     inlierRatio = 0.1;  % çok az piksel — düşük güven
     return;
@@ -72,11 +79,11 @@ bestInliers = [];
 
 for iter = 1:numIter
     idx = randi(length(vx_valid));
-    hyp_vx = vx_valid(idx);
+    hyp_vx = vx_valid(idx); %rastgele bir motion hipotezi seçiyor.
     hyp_vy = vy_valid(idx);
 
-    dist = sqrt((vx_valid - hyp_vx).^2 + (vy_valid - hyp_vy).^2);
-    inliers = dist < inlierThr;
+    dist = sqrt((vx_valid - hyp_vx).^2 + (vy_valid - hyp_vy).^2); 
+    inliers = dist < inlierThr; % ona benzeyen motion'ları topluyor.
 
     if sum(inliers) > length(inliers) * 0.3
         if sum(inliers) > length(bestInliers)
@@ -88,8 +95,9 @@ end
 if ~isempty(bestInliers) && sum(bestInliers) > 5
     dx = median(vx_valid(bestInliers));
     dy = median(vy_valid(bestInliers));
-    % DÜZELTME: inlier oranı = güven skoru
-    inlierRatio = sum(bestInliers) / length(vx_valid);
+    
+    %CONFIDENCE NASIL HESAPLANIYOR?
+    inlierRatio = sum(bestInliers) / length(vx_valid);%Eğer: çok fazla piksel aynı hareketi söylüyorsa:yüksek güven
 else
     % RANSAC başarısız → üst %25 harekete geri dön
     mag_valid = magnitude(validMask);

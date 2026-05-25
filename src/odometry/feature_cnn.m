@@ -1,18 +1,7 @@
-% =========================================================
-% Frame'i sayı dizisine çevirir
+% Frame'i sayısal kimliğe dönüştürmek ,thermal image → feature vector
 % AlexNet sinir ağı → 512 sayılık vektör. "Bu frame'in parmak izi."
-%
-%  Kullanım:
-%      feat = feature_cnn(I, net)
-%
-%  Girdi:
-%      I    — Tek kanallı termal görüntü [H x W], double [0,1]
-%      net  — load_cnn_model() ile yüklenmiş ResNet-18
-%
-%  Çıktı:
-%      feat — Özellik vektörü [1 x 512], double, L2 normalize
-% =========================================================
 
+%CNN BURADA CLASSIFICATION YAPMIYOR.Bunun yerine: “Bu frame nasıl görünüyor?” diyor.similarity bilgisi üretiyor
 function feat = feature_cnn(I, net)
 
     % --- 1. Giriş kontrolü ---
@@ -35,13 +24,16 @@ function feat = feature_cnn(I, net)
     I_rgb     = repmat(I_resized, [1 1 3]);
     I_rgb     = single(I_rgb);
 
+    %% DERİN ÖĞRENME BURADA
     % --- 4. 'pool5' katmanından 512-D özellik çek ---
-    feat_raw = activations(net, I_rgb, 'pool5', 'OutputAs', 'rows');
+    feat_raw = activations(net, I_rgb, 'pool5', 'OutputAs', 'rows'); %ResNet18'in sonlarına yakın bir katmandan özellik çekiyor
+    % POOL5 : Bu katman: yüksek seviyeli görsel özellikler çıkarır.
+    % mesela sıcak bölgeler ,şekiller, kenarlar, yapılar, termal desenler
 
     % --- 5. L2 normalize ---
     nrm = norm(feat_raw);
     if nrm > 1e-8
-        feat = feat_raw / nrm;
+        feat = feat_raw / nrm; %Bu: vektör büyüklüğünü sabitliyor.Amaç: feature karşılaştırmasını daha stabil yapmak
     else
         feat = feat_raw;
     end

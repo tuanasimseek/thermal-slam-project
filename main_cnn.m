@@ -1,4 +1,3 @@
-% MAIN_CNN
 % CNN + RANSAC tabanlı SLAM
 % Çıktıları hem results_cnn hem results_final içine düzenli kaydeder
 
@@ -23,12 +22,12 @@ for i=1:numel(dirs)
     end
 end
 
-scale       = 0.02;
-useEveryN   = 3;
-alphaLP     = 0.7;
-keyInterval = 8;
+scale       = 0.02; %CNN piksel kayması buluyor.Ama SLAM gerçek dünya hareketi ister.Bu yüzden: pixel → metric scale
+useEveryN   = 3; %3 frame'de bir işlem yapılıyor
+alphaLP     = 0.7; %ani hareketleri yumuşatmak
+keyInterval = 8; %8 frame'de bir keyframe oluşturuluyor
 
-%% CNN MODEL
+%% CNN MODEL : classification yapmıyor ,feature çıkarıyor
 net = load_cnn_model();
 
 %% VIDEO KLASÖRLERİ
@@ -40,8 +39,8 @@ fprintf("Video sayısı: %d\n", length(videoDirs));
 
 %% HER VIDEO
 for v = 1:length(videoDirs)
-
-    graph     = PoseGraph();
+% BURASI SLAM
+    graph     = PoseGraph(); %node ve edge tutuyor, edge : iki node arasi hareket
     videoName = videoDirs(v).name;
     seqDir    = fullfile(setDir, videoName, 'lwir');
 
@@ -75,15 +74,16 @@ for v = 1:length(videoDirs)
     keyframeNodeIds  = [];
     keyframeFrameIds = [];
 
-    % DÜZELTME 1: conf değerlerini biriktirmek için dizi başlat
+    % conf değerlerini biriktirmek için dizi başlat
     confValues = [];
 
     %% LOOP
     for k = 1:maxFrames
 
-        I = imread(fullfile(seqDir, imgs(k).name));
-        I = my_preprocess(I);
+        I = imread(fullfile(seqDir, imgs(k).name)); 
+        I = my_preprocess(I); %ham termal görüntü temizleniyor
 
+  % DERİN ÖĞRENME BURADA      
         feat = feature_cnn(I, net);
 
         if isempty(prev)
@@ -104,12 +104,13 @@ for v = 1:length(videoDirs)
         end
 
         %% ===== CNN + RANSAC POSE =====
-        [dx_pix, dy_pix, conf] = pose_estimator(prev, I, prev_feat, feat);
+        [dx_pix, dy_pix, conf] = pose_estimator(prev, I, prev_feat, feat); %ODOMETRY : frame'ler arası hareketi hesaplıyor
 
-        % DÜZELTME 2: conf değerini diziye ekle
+        % conf değerini diziye ekle
         confValues(end+1) = conf; %#ok<AGROW>
 
         %% SMOOTH
+        %Trajectory daha stabil oluyor.Bu: drift’i azaltmaya yardımcı olur.
         dx_pix = alphaLP*dx_pix + (1-alphaLP)*prev_dx;
         dy_pix = alphaLP*dy_pix + (1-alphaLP)*prev_dy;
 
@@ -119,15 +120,15 @@ for v = 1:length(videoDirs)
         dx = dx_pix * scale;
         dy = dy_pix * scale;
 
-        pose = pose + [dx dy];
-        trajectory(k-1,:) = pose;
+        pose = pose + [dx dy]; % eski pozisyon + hareket = yeni pozisyon
+        trajectory(k-1,:) = pose;% Bu: sonradan çizilen trajectory grafiği.
 
         %% GRAPH
         if mod(k, keyInterval) == 0
             prevNode = graph.nodeCount;
 
-            graph = graph.addNode(pose);
-            newNode = graph.nodeCount;
+            graph = graph.addNode(pose); % yeni pozisyon node oluyor
+            newNode = graph.nodeCount; % hareket edge oluyor
 
             graph = graph.addEdge(prevNode, newNode, dx, dy);
 
@@ -147,18 +148,20 @@ for v = 1:length(videoDirs)
     end
 
     %% SMOOTH
-    trajectory(:,1) = smoothdata(trajectory(:,1),'movmean',5);
+    trajectory(:,1) = smoothdata(trajectory(:,1),'movmean',5); %Trajectory son kez yumuşatılıyor.
     trajectory(:,2) = smoothdata(trajectory(:,2),'movmean',5);
 
     % DÜZELTME 3: ortalama güven hesapla, ekrana yaz
     if isempty(confValues)
         meanConf = 0;
     else
-        meanConf = mean(confValues);
+        meanConf = mean(confValues); %Bütün sistemin ortalama güveni.
     end
     fprintf("Ort. guven skoru: %.4f\n", meanConf);
 
-    %% OPTIMIZATION
+    %% OPTIMIZATION 
+    % Graph SLAM.trajectory drift'ini azaltmak.
+    % Odometry zamanla hata biriktirir.bütün graph'ı yeniden düzenler.
     optimizer      = GraphOptimizer(graph);
     optimizedNodes = optimizer.optimize(50, 0.1);
 
