@@ -1,15 +1,24 @@
-% "Buraya daha önce gelmiştim" der
-% Frame parmak izlerini karşılaştırır. Benzerlik ≥ 0.95 → loop tespit!
-% loop_closure → turuncu kesik çizgiler = sistem "buraya daha önce geldim" dedi. 
+% "Buraya daha once gelmistim" kararini verir.
+% Benzerlik tek basina yeterli degildir; en iyi eslesme hem yuksek skorlu
+% olmali hem de ikinci en iyi eslesmeden belirgin ayrilmalidir.
 
 
-function [loopIdx, simScore] = loop_detector(featDB, featCurr, minInterval)
+function [loopIdx, simScore, loopInfo] = loop_detector(featDB, featCurr, minInterval, threshold, maxLookback, minMargin)
 
-    LOOP_THRESHOLD = 0.93;   % yapay testte biraz sıkı
-    MAX_LOOKBACK   = 300;    % geçmişte en fazla 200 kayıt tara
+    if nargin < 4 || isempty(threshold)
+        threshold = 0.9995;
+    end
+    if nargin < 5 || isempty(maxLookback)
+        maxLookback = 300;
+    end
+    if nargin < 6 || isempty(minMargin)
+        minMargin = 1e-4;
+    end
 
     loopIdx  = -1;
     simScore = 0;
+    loopInfo = struct('bestSim', 0, 'secondSim', 0, 'margin', 0, ...
+        'threshold', threshold, 'minMargin', minMargin);
 
     N = size(featDB, 1);
 
@@ -19,7 +28,7 @@ function [loopIdx, simScore] = loop_detector(featDB, featCurr, minInterval)
     end
 
     searchEnd   = N - minInterval;
-    searchStart = max(1, searchEnd - MAX_LOOKBACK + 1);
+    searchStart = max(1, searchEnd - maxLookback + 1);
 
     if searchStart > searchEnd
         return;
@@ -28,9 +37,24 @@ function [loopIdx, simScore] = loop_detector(featDB, featCurr, minInterval)
     searchDB = featDB(searchStart:searchEnd, :);
 
     similarities = searchDB * featCurr';
-    [bestSim, localIdx] = max(similarities);
+    [sortedSim, sortedIdx] = sort(similarities, 'descend');
 
-    if bestSim >= LOOP_THRESHOLD
+    bestSim = sortedSim(1);
+    localIdx = sortedIdx(1);
+
+    if numel(sortedSim) >= 2
+        secondSim = sortedSim(2);
+    else
+        secondSim = 0;
+    end
+
+    margin = bestSim - secondSim;
+
+    loopInfo.bestSim = bestSim;
+    loopInfo.secondSim = secondSim;
+    loopInfo.margin = margin;
+
+    if bestSim >= threshold && margin >= minMargin
         loopIdx  = searchStart + localIdx - 1;
         simScore = bestSim;
     end

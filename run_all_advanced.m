@@ -21,6 +21,10 @@ switch lower(mode)
         resultsDir  = fullfile(pwd, 'results_ssd');
         finalMatDir = fullfile(pwd, 'results_final', 'mat', 'ssd');
         methodName  = 'ssd';
+    case 'dnn'
+        resultsDir  = fullfile(pwd, 'results_final', 'mat', 'dnn');
+        finalMatDir = resultsDir;
+        methodName  = 'dnn';
     otherwise
         resultsDir  = fullfile(pwd, 'results');
         finalMatDir = '';
@@ -77,8 +81,11 @@ for fi = 1:length(trajFiles)
     if ~isempty(finalMatDir)
         % prefix örn: set00_V000 → set00_V000_cnn_conf.mat
         confCandidate = fullfile(finalMatDir, [prefix '_' methodName '_conf.mat']);
+        altConfCandidate = fullfile(finalMatDir, [prefix '_conf.mat']);
         if exist(confCandidate, 'file')
             confPath = confCandidate;
+        elseif exist(altConfCandidate, 'file')
+            confPath = altConfCandidate;
         end
     end
 

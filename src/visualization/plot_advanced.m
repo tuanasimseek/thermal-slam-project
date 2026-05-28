@@ -165,7 +165,10 @@ for e = 1:size(edges,1)
 end
 
 M_nodes   = size(optimized,1);
-distThresh = 0.5;
+spanX = max(optimized(:,1)) - min(optimized(:,1));
+spanY = max(optimized(:,2)) - min(optimized(:,2));
+diagSpan = sqrt(spanX^2 + spanY^2);
+distThresh = max(0.002, min(0.05, 0.15 * diagSpan));
 loopPairs  = [];
 
 for i = 1:M_nodes
