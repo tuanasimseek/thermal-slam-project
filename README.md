@@ -12,7 +12,7 @@ Projede:
 - Loop Closure tespiti
 - Graph Optimization
 - Trajectory analizi
-- ATE / RTE metrikleri
+- Ground truth olmadığında proxy trajectory metrikleri
 - Gelişmiş görselleştirme sistemleri
 
 kullanılmıştır.
@@ -164,9 +164,118 @@ thermal-slam-project/
 | heatmap | En sık ziyaret edilen bölgeler |
 | confidence | Hareket güven skoru |
 | loop_closure | Tespit edilen loop bağlantıları |
-| metrics | ATE / RTE sonuçları |
+| metrics | Ground truth olmadığında proxy metrik sonuçları |
 | compare | CNN vs SSD karşılaştırması |
 ---
+
+# Final DNN Graph Thermal SLAM Pipeline
+
+Bu projede final başlığı desteklemek için CNN/SSD karşılaştırmasına ek olarak DNN tabanlı bir graph thermal SLAM hattı da oluşturulmuştur.
+
+Final DNN hattı şu adımlardan oluşur:
+
+```text
+Termal frame çifti
+   ↓
+Siamese ResNet feature extraction
+   ↓
+DNN odometri regresyonu: dx, dy, dtheta
+   ↓
+Pose graph node/edge kurulumu
+   ↓
+CNN feature tabanlı loop closure detection
+   ↓
+Loop edge ekleme
+   ↓
+Graph optimization
+   ↓
+Trajectory, loop closure ve proxy metrikler
+```
+
+Bu hatta CNN yalnızca görselleştirme amacıyla kullanılmamaktadır. İki ardışık termal frame'den çıkarılan ResNet feature vektörleri birleştirilerek DNN odometri regresyon modeline verilir ve model göreli hareket tahmini üretir. Bu tahminler pose graph yapısına odometry edge olarak eklenir.
+
+Final DNN çıktıları:
+
+```text
+results/siamese_odometry_data.mat
+results/siamese_odometry_model.mat
+results/figures/siamese_odometry_validation.png
+
+results_final/mat/dnn/*_dnn_traj.mat
+results_final/mat/dnn/*_dnn_graph.mat
+results_final/mat/dnn/*_dnn_conf.mat
+results_final/mat/dnn/dnn_proxy_metrics.mat
+results_final/mat/dnn/dnn_metrics.mat
+results_final/mat/dnn/pseudo_label_quality.mat
+results_final/mat/dnn/loop_feasibility.mat
+
+results_final/figures/trajectory/*_dnn_trajectory.png
+results_final/figures/advanced/dnn/
+results_final/figures/metrics/dnn_proxy_metrics.png
+results_final/figures/metrics/dnn_metrics.png
+results_final/figures/metrics/pseudo_label_quality.png
+results_final/figures/metrics/loop_feasibility.png
+```
+
+---
+
+# Teslim ve Geçerlilik Notları
+
+Bu proje, **Derin Sinir Ağları ile Grafik Tabanlı Termal SLAM Sistemi** başlığını çalışan bir prototip olarak karşılamaktadır. Sistem termal görüntülerden göreli hareket tahmini yapmakta, bu hareketleri pose graph yapısına dönüştürmekte, loop closure adaylarını değerlendirmekte ve graph optimization ile trajectory tutarlılığını artırmaktadır.
+
+Ancak kullanılan KAIST termal veri klasörlerinde ground truth pose bilgisi bulunmadığı için klasik SLAM çalışmalarındaki gerçek ATE/RTE hata metrikleri doğrudan hesaplanmamıştır. Bu nedenle final değerlendirmede `evaluate_dnn_proxy_metrics.m` kullanılmalı ve sistem performansı aşağıdaki proxy metriklerle yorumlanmalıdır:
+
+- Path Length
+- Endpoint Displacement
+- Endpoint / Path Ratio
+- Loop Closure Count
+- Mean Confidence
+
+Doğru rapor ifadesi:
+
+> Ground truth pose verisi bulunmadığından, sistem başarımı path length, endpoint displacement, endpoint/path ratio, loop closure sayısı ve trajectory tutarlılığı gibi proxy metriklerle değerlendirilmiştir. Endpoint/path ratio ATE/RTE değildir; rota kapalı değilse hata olarak yorumlanmaz.
+
+Projeye ayrıca `evaluate_dnn_metrics.m` dosyası eklenmiştir. Bu dosya ground truth pose dosyası bulunursa hizalanmış ATE/RTE hesaplar; ground truth yoksa otomatik olarak proxy değerlendirme moduna düşer. Böylece proje, ileride gerçek pose verisi eklendiğinde klasik hata metriklerini de destekleyecek şekilde genişletilmiştir.
+
+Ek olarak `evaluate_pseudo_label_quality.m` ve `evaluate_loop_feasibility.m` analizleri eklenmiştir. Bu iki analiz, pseudo-label eğitim yaklaşımının kalite dağılımını ve loop closure için veri/rota uygunluğunu ayrı ayrı raporlar.
+
+---
+
+# Sınırlılıklar
+
+## Ground Truth Yok
+
+Veri klasörlerinde gerçek poz bilgisi olmadığı için ATE/RTE gibi klasik SLAM hata metrikleri gerçek anlamda hesaplanamamaktadır. Bu durum projeyi geçersiz yapmaz; ancak sonuçların "proxy metrikler" olarak sunulmasını gerektirir.
+
+Eğer ground truth sonradan eklenirse aşağıdaki dosya adlarından biri kullanılabilir:
+
+```text
+data/<set>/<video>/poses.txt
+data/<set>/<video>/pose.txt
+data/<set>/<video>/groundtruth.txt
+data/<set>/<video>/ground_truth.txt
+data/<set>/<video>/gt.txt
+```
+
+Bu dosyalardan biri bulunduğunda `evaluate_dnn_metrics.m` gerçek pose verisini okuyarak hizalanmış ATE/RTE üretir.
+
+## Pseudo-Label Kullanımı
+
+DNN odometri modeli gerçek poz etiketleriyle değil, termal frame çiftlerinden optik akış tabanlı üretilen pseudo-label değerleriyle eğitilmiştir. Bu yaklaşım bitirme projesi düzeyinde savunulabilir bir prototip yöntemidir; fakat raporda açıkça belirtilmelidir.
+
+Bu sınırlılığı ölçülebilir hale getirmek için `evaluate_pseudo_label_quality.m` dosyası eklenmiştir. Bu dosya pseudo-label `dx`, `dy`, `dtheta` dağılımlarını ve label confidence değerlerini raporlar.
+
+## Loop Closure Sınırlılığı
+
+Loop closure edge üretimi seçici yapılmaktadır. Her sekansa otomatik loop closure eklemek yerine cosine similarity, margin, cooldown ve maksimum edge sayısı kontrol edilmektedir. Bu nedenle tüm sekanslarda loop closure oluşması beklenmez.
+
+Bu sınırlılığı veri seti açısından göstermek için `evaluate_loop_feasibility.m` dosyası eklenmiştir. Bu dosya graph'a eklenen gerçek loop edge sayısını ve trajectory geometrisine göre potansiyel yakın-dönüş loop sayısını birlikte raporlar.
+
+## Eski ATE/RTE Analizinin Yorumu
+
+`evaluate_metrics.m` dosyasındaki analiz fine-tune öncesi ve sonrası trajectory davranışını karşılaştırmak için kullanılabilir; fakat ground truth tabanlı gerçek ATE/RTE sonucu olarak sunulmamalıdır. Final raporda ana değerlendirme olarak `evaluate_dnn_proxy_metrics.m` çıktıları kullanılmalıdır.
+
+Ground truth pose dosyası varsa final değerlendirme için `evaluate_dnn_metrics.m` tercih edilmelidir.
 
 # CNN vs SSD Karşılaştırması
 
@@ -271,6 +380,21 @@ compare_cnn_ssd
 
 ---
 
+## Final DNN Graph Thermal SLAM
+
+```matlab
+addpath(genpath('src'))
+generate_siamese_odometry_data
+train_siamese_odometry
+main_dnn_slam
+evaluate_dnn_proxy_metrics
+evaluate_dnn_metrics
+evaluate_pseudo_label_quality
+evaluate_loop_feasibility
+```
+
+---
+
 # Sonuçlar
 
 Yapılan deneyler sonucunda:
@@ -279,7 +403,10 @@ Yapılan deneyler sonucunda:
 - Pose Graph Optimization işleminin trajectory drift hatasını azalttığı,
 - Loop Closure analizlerinin trajectory tutarlılığını artırdığı,
 - SSD yönteminin klasik ve hesaplama açısından daha hafif bir yaklaşım sunduğu,
-- CNN ve SSD yöntemlerinin farklı senaryolarda farklı avantajlar gösterdiği
+- CNN, SSD ve DNN tabanlı yöntemlerin farklı senaryolarda farklı avantajlar gösterdiği,
+- DNN tabanlı final hattın termal frame çiftlerinden göreli hareket tahmini üretip bu tahminleri pose graph optimizasyonuna dahil edebildiği
 
 gözlemlenmiştir.
+
+Bu sonuçlar, ground truth pose verisi bulunmadığı için mutlak konum doğruluğu iddiası olarak değil, çalışan DNN + graph tabanlı termal SLAM prototipinin trajectory tutarlılığı ve proxy metrik değerlendirmesi olarak yorumlanmalıdır.
 ---

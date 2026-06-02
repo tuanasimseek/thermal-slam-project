@@ -1,5 +1,12 @@
 % EVALUATE_METRICS
-% Fine-tune öncesi / sonrası ATE-RTE karşılaştırması
+% Fine-tune öncesi / sonrası proxy trajectory karşılaştırması.
+%
+% Not:
+% Bu dosya ground truth pose kullanmaz. Bu nedenle burada hesaplanan
+% değerler klasik SLAM literatüründeki gerçek ATE/RTE metrikleri değildir.
+% Fine-tune modelin base modele göre trajectory davranışını karşılaştıran
+% proxy değerler olarak raporlanmalıdır.
+%
 % Çıktıları results_final içine düzenli kaydeder.
 
 clc; clear; close all;
@@ -107,7 +114,7 @@ for k = 2:useEveryN:N
     I_prev = I_curr;
 end
 
-%% ATE
+%% PROXY ATE BENZERI DEGER
 minLen = min(size(traj_base,1), size(traj_ft,1));
 
 t_base = traj_base(1:minLen,:);
@@ -115,15 +122,15 @@ t_ft   = traj_ft(1:minLen,:);
 
 diff_ate = t_base - t_ft;
 
-% DÜZELTME: ATE_base artık elle 0 değil, doğru hesaplanıyor.
-% ATE_base: base modelin başlangıca olan kümülatif drift'i
-% (kendi kendine referans: her adımın başlangıçtan uzaklığı ortalaması)
+% Ground truth olmadigi icin bu deger gercek ATE degildir.
+% Base model icin baslangica olan kümülatif uzaklik, fine-tune model icin
+% base modele gore trajectory farki proxy olarak hesaplanir.
 ATE_base = sqrt(mean(sum(t_base.^2, 2)));
 ATE_ft   = sqrt(mean(sum(diff_ate.^2, 2)));
 
-fprintf('\nATE — Base: %.4f | Fine-tune: %.4f m\n', ATE_base, ATE_ft);
+fprintf('\nProxy ATE benzeri — Base: %.4f | Fine-tune: %.4f m\n', ATE_base, ATE_ft);
 
-%% RTE
+%% PROXY RTE BENZERI DEGER
 windowSize = 10;
 
 rte_base = [];
@@ -139,7 +146,7 @@ end
 RTE_base = mean(rte_base);
 RTE_ft   = mean(rte_ft);
 
-fprintf('RTE — Base: %.4f | Fine-tune: %.4f\n', RTE_base, RTE_ft);
+fprintf('Proxy RTE benzeri — Base: %.4f | Fine-tune: %.4f\n', RTE_base, RTE_ft);
 
 %% METRICS STRUCT
 metrics = struct();
@@ -152,6 +159,9 @@ metrics.ATE_ft   = ATE_ft;
 
 metrics.RTE_base = RTE_base;
 metrics.RTE_ft   = RTE_ft;
+metrics.metricNote = ['Ground truth pose kullanilmadigi icin ATE/RTE alanlari ', ...
+    'klasik hata metrigi degil, base ve fine-tune trajectory davranisini ', ...
+    'karsilastiran proxy degerlerdir.'];
 
 metrics.frameCount = N;
 metrics.usedEveryN = useEveryN;
@@ -161,7 +171,7 @@ metrics.traj_ft   = traj_ft;
 
 %% GRAFİK
 fig = figure('Visible','off', ...
-    'Name','ATE/RTE Comparison', ...
+    'Name','Proxy Trajectory Comparison', ...
     'Color','w', ...
     'Position',[100 100 1200 700]);
 
@@ -190,8 +200,8 @@ subplot(2,2,3);
 bar([ATE_base, ATE_ft]);
 set(gca, 'XTickLabel', {'Base','Fine-tune'});
 
-ylabel('ATE (m)');
-title('Absolute Trajectory Error');
+ylabel('Proxy değer (m)');
+title('ATE Benzeri Proxy');
 grid on;
 
 subplot(2,2,4);
@@ -199,11 +209,11 @@ subplot(2,2,4);
 bar([RTE_base, RTE_ft]);
 set(gca, 'XTickLabel', {'Base','Fine-tune'});
 
-ylabel('RTE (m)');
-title('Relative Trajectory Error');
+ylabel('Proxy değer (m)');
+title('RTE Benzeri Proxy');
 grid on;
 
-sgtitle(sprintf('FAZ 4 — Fine-tune Öncesi vs Sonrası (%s/%s)', setName, videoName));
+sgtitle(sprintf('FAZ 4 — Fine-tune Öncesi vs Sonrası Proxy Analiz (%s/%s)', setName, videoName));
 
 %% SAVE
 pngPath = fullfile(figDir, sprintf('%s_%s_ate_rte_comparison.png', setName, videoName));
@@ -220,8 +230,9 @@ fprintf('MAT kaydedildi: %s\n', matPath);
 %% ÖZET
 fprintf('\n========== SONUÇ TABLOSU ==========\n');
 fprintf('%-20s %-12s %-12s\n', 'Metrik', 'Base', 'Fine-tune');
-fprintf('%-20s %-12.4f %-12.4f\n', 'ATE (m)', ATE_base, ATE_ft);
-fprintf('%-20s %-12.4f %-12.4f\n', 'RTE (m)', RTE_base, RTE_ft);
+fprintf('%-20s %-12.4f %-12.4f\n', 'Proxy ATE', ATE_base, ATE_ft);
+fprintf('%-20s %-12.4f %-12.4f\n', 'Proxy RTE', RTE_base, RTE_ft);
+fprintf('Not: Bu degerler ground truth tabanli klasik ATE/RTE degildir.\n');
 fprintf('====================================\n');
 
 %% YARDIMCI FONKSİYONLAR
