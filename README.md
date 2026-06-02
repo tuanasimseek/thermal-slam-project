@@ -408,5 +408,4 @@ Yapılan deneyler sonucunda:
 
 gözlemlenmiştir.
 
-Bu sonuçlar, ground truth pose verisi bulunmadığı için mutlak konum doğruluğu iddiası olarak değil, çalışan DNN + graph tabanlı termal SLAM prototipinin trajectory tutarlılığı ve proxy metrik değerlendirmesi olarak yorumlanmalıdır.
 ---
